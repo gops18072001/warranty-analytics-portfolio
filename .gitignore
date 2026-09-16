@@ -1,0 +1,7 @@
+# Regenerable from generate_data.py (seeded - reproduces identically).
+# ~27 MB; keep it out of git.
+01_sql_warranty_analytics/warranty.db
+01_sql_warranty_analytics/csv/
+__pycache__/
+*.pyc
+.env
