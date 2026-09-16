@@ -1,0 +1,100 @@
+// ===========================================================================
+// Warranty & Quality Dashboard - DAX measures
+// Create a blank table named _Measures and add each of these to it.
+// ===========================================================================
+
+// --- Base counts -----------------------------------------------------------
+
+Total Units Produced = SUM ( production_batches[units_produced] )
+
+Total Claims = COUNTROWS ( warranty_claims )
+
+Total Warranty Cost = SUM ( warranty_claims[claim_cost_inr] )
+
+
+// --- Rates -----------------------------------------------------------------
+// DIVIDE, not "/", so an empty filter context returns blank instead of an
+// #DIV/0 error in a card visual.
+
+Claim Rate % =
+DIVIDE ( [Total Claims], [Total Units Produced], 0 ) * 100
+
+Cost per Unit =
+DIVIDE ( [Total Warranty Cost], [Total Units Produced], 0 )
+
+Avg Claim Cost =
+DIVIDE ( [Total Warranty Cost], [Total Claims], 0 )
+
+
+// --- Time intelligence -----------------------------------------------------
+// Require DimDate to be marked as a date table.
+
+Claims 3M Moving Avg =
+AVERAGEX (
+    DATESINPERIOD ( DimDate[Date], MAX ( DimDate[Date] ), -3, MONTH ),
+    [Total Claims]
+)
+
+Claims Prev Quarter =
+CALCULATE ( [Total Claims], PREVIOUSQUARTER ( DimDate[Date] ) )
+
+Claim Rate Prev Quarter =
+CALCULATE ( [Claim Rate %], PREVIOUSQUARTER ( DimDate[Date] ) )
+
+Claim Rate vs Prev Quarter =
+VAR Current = [Claim Rate %]
+VAR Previous = [Claim Rate Prev Quarter]
+RETURN
+    IF ( ISBLANK ( Previous ), BLANK (), Current - Previous )
+
+Cost YTD =
+TOTALYTD ( [Total Warranty Cost], DimDate[Date] )
+
+
+// --- Pareto ----------------------------------------------------------------
+// Cumulative share of warranty cost, ordered by cost descending. Pair with the
+// bar chart on Page 2 to show "the top N components are X% of spend".
+
+Cumulative Cost % =
+VAR CurrentCost = [Total Warranty Cost]
+VAR AllComponents =
+    CALCULATETABLE (
+        SUMMARIZE ( components, components[component_name] ),
+        ALLSELECTED ( components )
+    )
+VAR RunningTotal =
+    SUMX (
+        FILTER (
+            ADDCOLUMNS ( AllComponents, "@Cost", [Total Warranty Cost] ),
+            [@Cost] >= CurrentCost
+        ),
+        [@Cost]
+    )
+VAR GrandTotal =
+    SUMX ( ADDCOLUMNS ( AllComponents, "@Cost", [Total Warranty Cost] ), [@Cost] )
+RETURN
+    DIVIDE ( RunningTotal, GrandTotal, 0 ) * 100
+
+
+// --- Severity split --------------------------------------------------------
+
+High Severity Claims =
+CALCULATE ( [Total Claims], defect_types[severity] = "High" )
+
+High Severity % =
+DIVIDE ( [High Severity Claims], [Total Claims], 0 ) * 100
+
+
+// --- Data-quality guard ----------------------------------------------------
+// Batches younger than 180 days cannot have shown their full failure profile,
+// so any "improvement" in the most recent quarters is an observation-window
+// artefact. Use this on Page 2 for a like-for-like supplier comparison.
+
+Claim Rate % (Mature Batches) =
+CALCULATE (
+    [Claim Rate %],
+    FILTER (
+        production_batches,
+        production_batches[production_date] <= DATE ( 2025, 12, 31 )
+    )
+)
